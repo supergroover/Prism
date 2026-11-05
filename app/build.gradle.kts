@@ -46,6 +46,9 @@ android {
         buildConfigField("String", "LASTFM_API_KEY", "\"${localProps.getProperty("lastfm.apiKey", "")}\"")
         // Scrobbling (1.7.8) signs its requests with the API account's shared secret; without one it isn't offered.
         buildConfigField("String", "LASTFM_SECRET", "\"${localProps.getProperty("lastfm.secret", "")}\"")
+        // Prism updates itself from GitHub's releases (data/Updates.kt), except a build for cars (`-Pcar`, below): an
+        // update from GitHub is the phone's Prism, which would install beside it instead of replacing it.
+        buildConfigField("boolean", "SELF_UPDATE", (!project.hasProperty("car")).toString())
     }
 
     // Releases are signed with the key in keystore.properties (gitignored, with the .jks beside it).
@@ -98,8 +101,19 @@ android {
                 manifestPlaceholders["profileable"] = "true"
                 signingConfig = signingConfigs.getByName("debug")
             }
+            // `-Pcar`: Prism for a car with Android Automotive OS (Polestar, Volvo…), installed on the car itself. The car's
+            // own media player shows Prism's library and keeps playing while driving; Prism's screens open from the
+            // player's settings button when parked (src/car/AndroidManifest.xml). Installs as com.prism.music.car
+            // ("Prism Car"), so it's never taken for the phone's Prism, and doesn't update itself (SELF_UPDATE).
+            if (project.hasProperty("car")) {
+                applicationIdSuffix = ".car"
+                manifestPlaceholders["appLabel"] = "Prism Car"
+            }
         }
     }
+
+    // The car's manifest (`-Pcar`) is laid over the main one in release builds, where it's the only release manifest.
+    if (project.hasProperty("car")) sourceSets.getByName("release").manifest.srcFile("src/car/AndroidManifest.xml")
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

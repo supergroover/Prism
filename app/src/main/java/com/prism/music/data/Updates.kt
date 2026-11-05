@@ -81,6 +81,8 @@ class UpdateChecker(private val context: Context, private val http: OkHttpClient
     }
 
     private fun saved(): AppUpdate? {
+        // A build for cars (`-Pcar`) doesn't update itself: GitHub's APK is the phone's Prism.
+        if (!BuildConfig.SELF_UPDATE) return null
         val v = prefs.getString("latest_version", null) ?: return null
         val url = prefs.getString("latest_url", null) ?: return null
         return AppUpdate(v, url).takeIf { isNewer(v, BuildConfig.VERSION_NAME) && v != prefs.getString("dismissed", null) }
@@ -91,7 +93,7 @@ class UpdateChecker(private val context: Context, private val http: OkHttpClient
      * so a new release could take most of a day to show; an unchanged answer is a cheap "nothing new" now, see [fetch]).
      */
     fun check() {
-        if (checking || !dueToCheck(System.currentTimeMillis(), prefs.getLong("checked_at", 0))) return
+        if (!BuildConfig.SELF_UPDATE || checking || !dueToCheck(System.currentTimeMillis(), prefs.getLong("checked_at", 0))) return
         checking = true
         scope.launch(Dispatchers.IO) {
             runCatching { fetch() }
@@ -104,6 +106,7 @@ class UpdateChecker(private val context: Context, private val http: OkHttpClient
      * Home is offered again. Returns the newer version, null when Prism is current, or throws.
      */
     suspend fun checkNow(): String? = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (!BuildConfig.SELF_UPDATE) return@withContext null
         prefs.edit().remove("dismissed").apply()
         fetch()
         _available.value?.version

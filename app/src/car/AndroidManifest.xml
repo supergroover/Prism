@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Prism for cars with Android Automotive OS (Polestar, Volvo, Renault, GM…), installed on the car itself: what a build
+    with `-Pcar` (app/build.gradle.kts) lays over src/main/AndroidManifest.xml.
+
+    A car only lets apps made for it on the screen while it moves, and a media app is made for it by having no screens of
+    its own there: the car's own media player shows Prism's library (the same PlaybackService and media tree Android Auto
+    browses) and keeps playing while driving. So this build has no launcher entry (the car lists Prism as a media source,
+    from its playback service), and Prism's own screens open from the player's settings button, which the car only allows
+    when parked. https://developer.android.com/training/cars/media/automotive-os
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature
+        android:name="android.hardware.type.automotive"
+        android:required="true" />
+
+    <application android:appCategory="audio">
+
+        <!-- Tells the car Prism is a media app for it (xml/automotive_app_desc: <uses name="media" />). -->
+        <meta-data
+            android:name="com.android.automotive"
+            android:resource="@xml/automotive_app_desc" />
+        <!-- Android Auto's entry (the phone projecting to a car) doesn't belong in a car's own app. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            tools:node="remove" />
+
+        <!-- The car's media player's settings button: Prism's own screens (sign-in, Settings, everything), when parked. -->
+        <activity android:name=".PrismActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.APPLICATION_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- No launcher entries: the app icons' aliases stay (AppIcons switches them by name), without their filters. -->
+        <activity-alias android:name=".MainActivity"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconSpectrum"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconSolid"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconLight"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconWave"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconMidnight"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconDusk"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconPaper"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconNeon"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconPastel"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconLine"><intent-filter tools:node="removeAll" /></activity-alias>
+        <activity-alias android:name=".IconGold"><intent-filter tools:node="removeAll" /></activity-alias>
+    </application>
+</manifest>

@@ -307,6 +307,14 @@ Requirements: JDK 17+ and the Android SDK (compile SDK 37).
 
 The APK lands in `app/build/outputs/apk/release/`. Without a `keystore.properties` (and its keystore) in the project root, release builds are signed with the debug key so they install directly; official releases use Prism's own key, so a self-built APK installs beside them only after uninstalling the official one. Release builds are deliberately unminified (NewPipe Extractor and Rhino rely on reflection).
 
+For a car with Android Automotive OS (Polestar, Volvo and others, installed on the car itself rather than through Android Auto):
+
+```bash
+./gradlew :app:assembleRelease -Pcar
+```
+
+It installs as **Prism Car** (`com.prism.music.car`) beside any other Prism. The car's own media player shows Prism's library and keeps playing while driving; Prism's own screens (sign-in, Settings) open from the player's settings button when parked. It doesn't update itself from GitHub.
+
 Unit tests (some call live lyric and YouTube Music endpoints, so they need a network connection):
 
 ```bash
