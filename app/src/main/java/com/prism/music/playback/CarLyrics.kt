@@ -217,7 +217,8 @@ class CarLyrics(
             return
         }
         val current = player.currentMediaItem?.toSong()
-        if (current == null) { overlay.show(null); shown = null; return }
+        // A live stream or radio station has no lyrics to follow.
+        if (current == null || current.isLive) { overlay.show(null); shown = null; return }
         if (current.id != songId) load(current)
         shown = null
         if (tickJob?.isActive != true) tickJob = scope.launch {

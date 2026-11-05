@@ -32,7 +32,7 @@ class DjPrescanWorker(context: Context, params: WorkerParameters) : CoroutineWor
         val now = System.currentTimeMillis()
         val ids = (c.db.plays().mostPlayedIds(now - 90L * 86_400_000, MAX_SONGS) + c.db.songs().liked().map { it.id })
             .distinct()
-            .filter { !it.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX) && !c.mixTempo.keyed(it) }
+            .filter { !it.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX) && !it.startsWith(com.prism.music.data.model.Song.RADIO_PREFIX) && !c.mixTempo.keyed(it) }
             .take(MAX_SONGS)
         if (ids.isEmpty()) return Result.success()
         val started = System.currentTimeMillis()

@@ -771,6 +771,7 @@ class AppContainer(val app: Application) {
         writer: ((androidx.media3.datasource.cache.CacheWriter) -> Unit)? = null,
     ) {
         if (id.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX)) return // a file on the phone is ready already
+        if (id.startsWith(com.prism.music.data.model.Song.RADIO_PREFIX)) return // a radio station: live, nothing to load ahead
         if (downloadCache.fullyCached(id, 0, C.LENGTH_UNSET.toLong())) return
         yieldToPlaying(if (forSing) null else id)
         val s = runCatching { streams.resolve(id) }.getOrNull() ?: return // live streams and failures: nothing to save
@@ -858,6 +859,25 @@ class AppContainer(val app: Application) {
         val s = try { streams.resolve(id, withVideo = true) } catch (e: Exception) { throw IOException(e.message, e) }
         return android.net.Uri.parse(s.videoUrl ?: throw IOException("No video stream available"))
     }
+
+    /**
+     * Prism Car's internet radio ([com.prism.music.data.radio.RadioDirectory]): stations from Radio Browser's directory,
+     * favorites and the ones played lately. Only a build for cars (`-Pcar`) shows it.
+     */
+    val radioStations by lazy { com.prism.music.data.radio.RadioDirectory(app, http, scope) }
+
+    /**
+     * Radio stations: their streams are plain GETs from the station's own server, nothing cached (they have no end);
+     * prism://radio/<id> (a station not known when it was queued) is looked up in the directory first.
+     */
+    fun radioDataSourceFactory(): DataSource.Factory =
+        ResolvingDataSource.Factory(OkHttpDataSource.Factory(http).setUserAgent("PrismCar/${BuildConfig.VERSION_NAME}")) { spec ->
+            val id = spec.uri.lastPathSegment
+            if (spec.uri.scheme != "prism" || spec.uri.authority != "radio" || id == null) spec else {
+                val station = radioStations.stationBlocking(id) ?: throw IOException(tr(R.string.couldn_t_load_the_live_stream))
+                spec.buildUpon().setUri(station.stream).build()
+            }
+        }
 
     /**
      * Live streams: prism://live/<id> becomes the stream's HLS manifest; its playlists and segments are plain GETs

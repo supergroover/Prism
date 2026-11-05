@@ -929,8 +929,9 @@ class PlayerConnection(private val context: Context, private val c: AppContainer
      */
     private fun checkVideo(song: Song) {
         _videoLoading.value = false
-        // A live stream carries its own picture (the same HLS stream), so there's nothing to look up.
-        if (song.isLive) { _videoAvailable.value = true; return }
+        // A live stream carries its own picture (the same HLS stream), so there's nothing to look up; a radio station
+        // (Prism Car) has none.
+        if (song.isLive) { _videoAvailable.value = !song.isRadio; return }
         val saved = c.downloads.downloadedVideoId(song.id)
         if (saved == null && song.id in c.queue.noVideo) { _videoAvailable.value = false; return }
         val known = if (song.isVideo) song.id else saved ?: c.queue.counterparts[song.id]

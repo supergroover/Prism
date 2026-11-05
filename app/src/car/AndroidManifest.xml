@@ -16,7 +16,11 @@
         android:name="android.hardware.type.automotive"
         android:required="true" />
 
-    <application android:appCategory="audio">
+    <!-- usesCleartextTraffic: many radio stations stream (and show their logos) over plain http; Prism's own requests
+         stay https. Only this build for cars, whose Radio tab plays them. -->
+    <application
+        android:appCategory="audio"
+        android:usesCleartextTraffic="true">
 
         <!-- Tells the car Prism is a media app for it (xml/automotive_app_desc: <uses name="media" />). -->
         <meta-data

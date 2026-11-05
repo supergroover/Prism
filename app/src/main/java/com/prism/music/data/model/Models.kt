@@ -37,10 +37,14 @@ data class Song(
     val primaryArtist: String get() = artists.firstOrNull()?.name ?: ""
     /** A music file on the phone (Library → Local music), not a YouTube Music song: it plays from the file. */
     val isLocal: Boolean get() = id.startsWith(LOCAL_PREFIX)
+    /** An internet radio station (Prism Car's Radio tab, data/radio): a live stream with no end, never a YouTube song. */
+    val isRadio: Boolean get() = id.startsWith(RADIO_PREFIX)
 
     companion object {
         /** Local songs' ids: this, then the file's MediaStore id. */
         const val LOCAL_PREFIX = "local:"
+        /** Radio stations' ids: this, then the station's id in Radio Browser's directory. */
+        const val RADIO_PREFIX = "radio:"
     }
 }
 

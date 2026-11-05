@@ -141,6 +141,8 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
             PlaybackServices.taskRemovedForTest = { onTaskRemoved(null) }
         }
         AudioDiagnostics.init(this)
+        // Prism Car: the favorite and recent radio stations (their addresses) known before a queue with one comes back.
+        if (com.prism.music.BuildConfig.CAR_BUILD) c.radioStations
         // Media3's own audio warnings (spurious AudioTrack timestamps, position jumps…) go into the diagnostics too.
         androidx.media3.common.util.Log.setLogger(object : androidx.media3.common.util.Log.Logger {
             private val system = androidx.media3.common.util.Log.Logger.DEFAULT
@@ -199,6 +201,7 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
                     localFiles(),
                     localAudio = { item -> losslessFileFor(item) },
                     liveDsf = c.liveDataSourceFactory(),
+                    radioDsf = c.radioDataSourceFactory(),
                 )
             )
             .setAudioAttributes(
@@ -462,6 +465,7 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
                     localFiles(),
                     localAudio = { item -> losslessFileFor(item) },
                     liveDsf = c.liveDataSourceFactory(),
+                    radioDsf = c.radioDataSourceFactory(),
                 )
             )
             // The whole ending (a blend plus its lead-in is under 20 s) is loaded as soon as the tail is made, seconds before
@@ -646,7 +650,8 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         c.nerdStats.value = NerdStats(videoId = song.id, outputDevice = AudioEffects.outputDevice(this))
         c.streamDetails[song.id]?.let { applyStreamStats(song.id) }
         // Recently played (#296: not while history is paused).
-        if (!com.prism.music.data.HistoryPause.paused(c.settings.current.behavior)) scope.launch(Dispatchers.IO) { c.library.recordPlayed(song) }
+        if (song.isRadio) c.radioStations.played(song.id.removePrefix(Song.RADIO_PREFIX))
+        else if (!com.prism.music.data.HistoryPause.paused(c.settings.current.behavior)) scope.launch(Dispatchers.IO) { c.library.recordPlayed(song) }
         scope.launch { c.bestParts.onSongStarted(song) }
         singAhead()
         djAhead()
@@ -941,6 +946,25 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
 
     override fun onPlayerError(error: PlaybackException) {
         val id = player.currentMediaItem?.mediaId ?: return
+        // A radio station (Prism Car): a dropped stream is picked up again, twice; one that won't play is passed over.
+        // None of a song's remedies (fresh YouTube links, its cache or download) apply to it.
+        if (id.startsWith(Song.RADIO_PREFIX)) {
+            val tries = retries[id] ?: 0
+            if (tries < 2 && error.errorCode in PlaybackException.ERROR_CODE_IO_UNSPECIFIED..PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE) {
+                retries[id] = tries + 1
+                AudioDiagnostics.log("radio", "$id: the stream dropped (${error.errorCodeName}); connecting again")
+                scope.launch {
+                    delay(1_000)
+                    player.seekToDefaultPosition()
+                    player.prepare()
+                    player.play()
+                }
+                return
+            }
+            AudioDiagnostics.log("radio", "$id won't play (${error.errorCodeName})")
+            failAndSkip(error)
+            return
+        }
         // An Apple Lossless file this phone has no decoder for (#135): the lossless add-on's file is set aside and the
         // song's stream plays; a file of your own says so and stays put rather than being skipped.
         val format = (error as? androidx.media3.exoplayer.ExoPlaybackException)?.takeIf { it.type == androidx.media3.exoplayer.ExoPlaybackException.TYPE_RENDERER }?.rendererFormat
@@ -1256,8 +1280,8 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         // A song's radio (Quick picks, "Radio" in a song's menu) keeps going whether or not Autoplay is on: that's what it is.
         val radio = src.isSongRadio
         if ((!c.settings.current.autoplay && !radio) || player.mediaItemCount == 0 || c.queue.followingHost) return
-        // No music radio after a podcast episode.
-        if (player.currentMediaItem?.toSong()?.isEpisode == true) return
+        // No music radio after a podcast episode, nor after a radio station (Prism Car).
+        if (player.currentMediaItem?.toSong()?.let { it.isEpisode || it.isRadio } == true) return
         if (src.kind != QueueKind.SINGLE && !radio && player.repeatMode != Player.REPEAT_MODE_OFF) return
         if (player.mediaItemCount - player.currentMediaItemIndex > 3 || c.queue.autoplayLoading) return
         val seed = src.seedId ?: player.getMediaItemAt(player.mediaItemCount - 1).mediaId.takeIf { it.isNotBlank() } ?: return
@@ -1417,13 +1441,13 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         preloadJob?.cancel()
         if (preload.songs > 0) {
             val playing = player.currentMediaItem?.mediaId
-            val ids = upcoming(preload.songs).map { it.mediaId }.filter { it.isNotBlank() && !c.downloads.isDownloaded(it) }
+            val ids = upcoming(preload.songs).map { it.mediaId }.filter { it.isNotBlank() && !it.startsWith(Song.RADIO_PREFIX) && !c.downloads.isDownloaded(it) }
             preloadJob = scope.launch {
                 if (playing != null) untilUnderWay(playing, UNDER_WAY_MS)
                 for (id in ids) withContext(Dispatchers.IO) { c.warmUp(id, whole = true, cellular = c.settings.current.preloadCellular) }
             }
         }
-        if (next.startsWith(Song.LOCAL_PREFIX)) return
+        if (next.startsWith(Song.LOCAL_PREFIX) || next.startsWith(Song.RADIO_PREFIX)) return
         // Its "Most replayed" curve (for the best part), ready before it plays, and the one after's (a double skip).
         val coming = listOfNotNull(player.getMediaItemAt(i).toSong(), upcoming(2).getOrNull(1)?.toSong())
         scope.launch { coming.forEach { s -> c.bestParts.prefetch(s) } }
@@ -1431,7 +1455,7 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         // The song after it is resolved too (no audio fetched): skipping twice used to land on one that wasn't, which
         // took ~2 s to start. Each song is resolved once either way, only earlier.
         val afterNext = upcoming(2).getOrNull(1)?.mediaId
-            ?.takeIf { it.isNotBlank() && !it.startsWith(Song.LOCAL_PREFIX) && !c.downloads.isDownloaded(it) }
+            ?.takeIf { it.isNotBlank() && !it.startsWith(Song.LOCAL_PREFIX) && !it.startsWith(Song.RADIO_PREFIX) && !c.downloads.isDownloaded(it) }
         scope.launch(Dispatchers.IO) {
             c.warmUp(next, cellular = c.settings.current.preloadCellular)
             afterNext?.let { c.streams.prefetch(it) }
@@ -1768,7 +1792,7 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         }
         // Replay, smart downloads and search taste are about music: episodes aren't counted. Long enough to be a play
         // (#263: ten seconds unless the listener picked otherwise), and not while history is paused (#296).
-        if (song != null && com.prism.music.data.HistoryPause.keepsPlay(c.settings.current.behavior, ms, song.isEpisode)) {
+        if (song != null && !song.isRadio && com.prism.music.data.HistoryPause.keepsPlay(c.settings.current.behavior, ms, song.isEpisode)) {
             scope.launch(Dispatchers.IO) {
                 c.db.plays().insert(PlayEventEntity(songId = song.id, timestamp = System.currentTimeMillis(), playedMs = ms, source = source, excluded = excluded))
             }
@@ -2004,7 +2028,14 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
         val liked = id != null && id in c.library.likedIds.value
         fun button(icon: Int, name: String, command: SessionCommand) =
             CommandButton.Builder(icon).setDisplayName(name).setSessionCommand(command).setSlots(CommandButton.SLOT_OVERFLOW).build()
-        val custom = c.settings.current.sessionButtons.map { b ->
+        val station = player.currentMediaItem?.mediaId?.takeIf { it.startsWith(Song.RADIO_PREFIX) }?.removePrefix(Song.RADIO_PREFIX)
+        val custom = if (station != null) {
+            // A radio station (Prism Car): the heart keeps it among the favorite stations; a song's other buttons (start
+            // radio, not for me, seeking) mean nothing for it.
+            val favorite = c.radioStations.isFavorite(station)
+            listOf(button(if (favorite) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED,
+                if (favorite) tr(R.string.car_radio_remove_favorite) else tr(R.string.car_radio_add_favorite), likeCommand))
+        } else c.settings.current.sessionButtons.map { b ->
             when (b) {
                 SessionButton.LIKE -> button(if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED, if (liked) tr(R.string.remove_from_liked) else tr(R.string.widget_like), likeCommand)
                 SessionButton.SHUFFLE -> button(if (player.shuffleModeEnabled) CommandButton.ICON_SHUFFLE_ON else CommandButton.ICON_SHUFFLE_OFF, if (player.shuffleModeEnabled) tr(R.string.shuffle_off) else tr(R.string.shuffle), shuffleCommand)
@@ -2292,7 +2323,10 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
             args: Bundle,
         ): ListenableFuture<SessionResult> {
             when (customCommand.customAction) {
-                likeCommand.customAction -> player.currentMediaItem?.toSong()?.let { c.library.toggleLike(it) }
+                likeCommand.customAction -> player.currentMediaItem?.toSong()?.let { song ->
+                    if (song.isRadio) { c.radioStations.toggleFavorite(song.id.removePrefix(Song.RADIO_PREFIX)); updateButtons() }
+                    else c.library.toggleLike(song)
+                }
                 shuffleCommand.customAction -> {
                     if (!player.shuffleModeEnabled) reshuffle()
                     player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -2303,8 +2337,8 @@ open class PlaybackService : MediaLibraryService(), Player.Listener {
                     else -> Player.REPEAT_MODE_OFF
                 }
                 lyricsCommand.customAction -> c.settings.setCarLyrics(!c.settings.current.carLyrics)
-                radioCommand.customAction -> startRadio()
-                dislikeCommand.customAction -> player.currentMediaItem?.toSong()?.let { song ->
+                radioCommand.customAction -> if (player.currentMediaItem?.toSong()?.isRadio != true) startRadio()
+                dislikeCommand.customAction -> player.currentMediaItem?.toSong()?.takeIf { !it.isRadio }?.let { song ->
                     c.library.setDisliked(song, true)
                     if (player.hasNextMediaItem()) player.seekToNextMediaItem()
                 }

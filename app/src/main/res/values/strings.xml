@@ -4656,4 +4656,10 @@
     <string name="imp_live_no_plays">On. No plays yet</string>
     <string name="smart_downloads_offer_title">Download songs before you need them?</string>
     <string name="smart_downloads_offer_body">Smart Downloads keeps the songs you\'re likely to play ready offline: up to 1 GB, on Wi-Fi. Change it any time in Downloads, storage &amp; data.</string>
+    <!-- Prism Car (a build for cars with Android Automotive OS): its Radio tab, internet radio from Radio Browser. -->
+    <string name="car_radio">Radio</string>
+    <string name="car_radio_favorites">Favorite stations</string>
+    <string name="car_radio_popular_nl">Popular in the Netherlands</string>
+    <string name="car_radio_add_favorite">Add to favorite stations</string>
+    <string name="car_radio_remove_favorite">Remove from favorite stations</string>
 </resources>

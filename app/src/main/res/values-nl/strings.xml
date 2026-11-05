@@ -4623,4 +4623,9 @@
     <string name="glass_kinds_info">Matglas: een zachte vervaging achter de balken en bediening. Liquid Glass: ze buigen wat erachter zit, als echt glas (Android 12 en later; oudere telefoons krijgen Matglas). Normaal vervaagt wat erachter zit, zoals matglas dat doet. Helder houdt het scherp, met alleen een lichte tint.</string>
     <string name="smart_downloads_offer_title">Songs downloaden voordat je ze nodig hebt?</string>
     <string name="smart_downloads_offer_body">Slimme downloads houdt de songs die je waarschijnlijk gaat afspelen offline klaar: tot 1 GB, via Wi-Fi. Wijzig het altijd in Downloads, opslag &amp; data.</string>
+    <string name="car_radio">Radio</string>
+    <string name="car_radio_favorites">Favoriete zenders</string>
+    <string name="car_radio_popular_nl">Populair in Nederland</string>
+    <string name="car_radio_add_favorite">Toevoegen aan favoriete zenders</string>
+    <string name="car_radio_remove_favorite">Verwijderen uit favoriete zenders</string>
 </resources>

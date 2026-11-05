@@ -29,18 +29,25 @@ class PrismMediaSourceFactory(
     private val localAudio: ((MediaItem) -> Uri?)? = null,
     /** Live streams: prism://live/<id> resolved to the stream's HLS manifest. */
     liveDsf: DataSource.Factory? = null,
+    /** Radio stations (Prism Car): their own stream's address, or prism://radio/<id> looked up as it loads. Never cached. */
+    radioDsf: DataSource.Factory? = null,
 ) : MediaSource.Factory {
     private val extractors = DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
     private val audio = ProgressiveMediaSource.Factory(audioDsf, extractors)
     private val video = ProgressiveMediaSource.Factory(videoDsf, extractors)
     private val local = localDsf?.let { ProgressiveMediaSource.Factory(it, extractors) }
     private val live = liveDsf?.let { HlsMediaSource.Factory(it).setPlaylistParserFactory(BestLiveAudioParserFactory()) }
+    // A station's stream has no length to seek in (and its own extractors: no constant-bitrate seeking).
+    private val radio = radioDsf?.let { ProgressiveMediaSource.Factory(it, DefaultExtractorsFactory()) }
+    private val radioHls = radioDsf?.let { HlsMediaSource.Factory(it) }
 
     override fun setDrmSessionManagerProvider(drmSessionManagerProvider: DrmSessionManagerProvider): MediaSource.Factory {
         audio.setDrmSessionManagerProvider(drmSessionManagerProvider)
         local?.setDrmSessionManagerProvider(drmSessionManagerProvider)
         video.setDrmSessionManagerProvider(drmSessionManagerProvider)
         live?.setDrmSessionManagerProvider(drmSessionManagerProvider)
+        radio?.setDrmSessionManagerProvider(drmSessionManagerProvider)
+        radioHls?.setDrmSessionManagerProvider(drmSessionManagerProvider)
         return this
     }
 
@@ -49,12 +56,22 @@ class PrismMediaSourceFactory(
         local?.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         video.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         live?.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+        radio?.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+        radioHls?.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         return this
     }
 
     override fun getSupportedTypes(): IntArray = intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+        if (radio != null && radioHls != null && mediaItem.mediaId.startsWith(com.prism.music.data.model.Song.RADIO_PREFIX)) {
+            val item = mediaItem.buildUpon().setCustomCacheKey(null).apply {
+                if (mediaItem.localConfiguration == null) {
+                    setUri(Uri.Builder().scheme("prism").authority("radio").appendPath(mediaItem.mediaId.removePrefix(com.prism.music.data.model.Song.RADIO_PREFIX)).build())
+                }
+            }.build()
+            return if (item.localConfiguration?.mimeType == MimeTypes.APPLICATION_M3U8) radioHls.createMediaSource(item) else radio.createMediaSource(item)
+        }
         if (live != null && mediaItem.localConfiguration?.uri?.authority == "live") {
             return live.createMediaSource(mediaItem.buildUpon().setMimeType(MimeTypes.APPLICATION_M3U8).setCustomCacheKey(null).build())
         }

@@ -49,6 +49,9 @@ class MediaTree(private val c: AppContainer) {
         const val PRISM_LIST = "pp:"
         /** A holiday mix's folder ("hm:" + its "season:…" id). */
         const val HOLIDAY = "hm:"
+        /** Prism Car's Radio tab (internet radio, in Recents' place), and its lists of stations ("rl:" + which). */
+        const val RADIO = "radio"
+        private const val RADIO_LIST = "rl:"
         /** How many of each Home section's items show as tiles in the car. */
         private const val HOME_TILES = 8
         /** The songs a search found, as a folder (a song tapped in the results plays them on from there). */
@@ -89,6 +92,11 @@ class MediaTree(private val c: AppContainer) {
     private fun playable(song: Song, extras: android.os.Bundle? = null): MediaItem {
         songs[song.id] = song
         val item = song.toMediaItem()
+        // A station's logo (or Prism's radio tile) and "Radio · its genres" are its item's already.
+        if (song.isRadio) return item.buildUpon().setMediaMetadata(
+            item.mediaMetadata.buildUpon().setArtworkUri(artworkUri(song.thumbnail, RADIO_TILE)).setSubtitle(song.artistText)
+                .apply { if (extras != null) setExtras(extras) }.build()
+        ).build()
         return item.buildUpon().setMediaMetadata(
             // The cover picked for the song or its album (#305) when there is one.
             item.mediaMetadata.buildUpon().setArtworkUri(artworkUri(c.covers.art(song))).setSubtitle(com.prism.music.data.SongVersions.shownOf(song).artistText)
@@ -124,7 +132,10 @@ class MediaTree(private val c: AppContainer) {
         parentId == ROOT -> listOf(
             folder(HOME, tr(R.string.home), extras = styled(browsableGrid = true, playableGrid = true)),
             folder(MADE_FOR_YOU, tr(R.string.made_for_you), type = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS, extras = styled(browsableGrid = true, playableGrid = false)),
-            folder(RECENT, tr(R.string.recents), type = MediaMetadata.MEDIA_TYPE_PLAYLIST),
+            // Prism Car: Radio in Recents' place (Recently played moves into Library).
+            if (BuildConfig.CAR_BUILD) folder(RADIO, tr(R.string.car_radio), type = MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS,
+                extras = styled(browsableGrid = false, playableGrid = true), fallback = RADIO_TILE)
+            else folder(RECENT, tr(R.string.recents), type = MediaMetadata.MEDIA_TYPE_PLAYLIST),
             folder(LIBRARY, tr(R.string.library), type = MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS, extras = styled(browsableGrid = true, playableGrid = false)),
         )
         // Home: every section's albums, playlists and songs as tiles under its heading (with the grid), like Spotify's
@@ -161,11 +172,22 @@ class MediaTree(private val c: AppContainer) {
         parentId.startsWith(HOLIDAY) -> c.seasonal.mix(parentId.removePrefix(HOLIDAY))?.let { songList(parentId, it.title, it.songs) } ?: emptyList()
         parentId == LIKED -> songList(parentId, tr(R.string.liked_songs), c.library.likedShown.value)
         parentId == RECENT -> songList(parentId, tr(R.string.recently_played), c.library.recent.value)
+        // Prism Car's Radio: the favorite stations, then the most played in the Netherlands (each list plays on from the
+        // station tapped, so next and previous go through its stations).
+        parentId == RADIO -> {
+            val favorites = c.radioStations.favorites()
+            val popular = runCatching { c.radioStations.popular() }.getOrDefault(emptyList()).filter { s -> favorites.none { it.uuid == s.uuid } }
+            stationList("${RADIO_LIST}fav", tr(R.string.car_radio_favorites), favorites) +
+                stationList("${RADIO_LIST}nl", tr(R.string.car_radio_popular_nl), popular)
+        }
         parentId == DOWNLOADS -> songList(parentId, tr(R.string.downloads), c.downloads.completedSongs())
         parentId == LIBRARY -> {
             var playlists = c.library.playlists.value
             if (playlists.isEmpty() && c.settings.current.isLoggedIn) playlists = runCatching { c.ytm.libraryPlaylists() }.getOrDefault(emptyList())
-            listOf(
+            // Prism Car: Recently played lives here, its tab being Radio's.
+            val recent = if (BuildConfig.CAR_BUILD) listOf(folder(RECENT, tr(R.string.recently_played), type = MediaMetadata.MEDIA_TYPE_PLAYLIST))
+                else emptyList<MediaItem>()
+            recent + listOf(
                 folder(LIKED, tr(R.string.liked_songs), art = c.covers.custom("liked"), type = MediaMetadata.MEDIA_TYPE_PLAYLIST, fallback = "ic_auto_liked"),
                 folder(DOWNLOADS, tr(R.string.downloads), type = MediaMetadata.MEDIA_TYPE_PLAYLIST, fallback = "ic_auto_downloads"),
             ) +
@@ -202,6 +224,15 @@ class MediaTree(private val c: AppContainer) {
         is PlaylistItem -> folder(mixOrPlaylistId(item), item.title, item.subtitle, c.covers.art(item), MediaMetadata.MEDIA_TYPE_PLAYLIST, extras)
         is ArtistItem -> folder("ar:${item.id}", item.title, item.subtitle, item.thumbnail, MediaMetadata.MEDIA_TYPE_ARTIST, extras)
         else -> null
+    }
+
+    /** Radio stations under [title], as a list that plays on from the station tapped. */
+    private fun stationList(id: String, title: String, stations: List<com.prism.music.data.radio.RadioStation>): List<MediaItem> {
+        if (stations.isEmpty()) return emptyList()
+        val list = stations.map { it.toSong() }
+        folders[id] = title to list
+        val heading = grouped(title)
+        return list.map { playable(it, heading) }
     }
 
     private fun songList(id: String, title: String, list: List<Song>): List<MediaItem> {
@@ -261,6 +292,9 @@ class MediaTree(private val c: AppContainer) {
             .map { folder(it.folderId, it.title, it.subtitle, it.art, MediaMetadata.MEDIA_TYPE_PLAYLIST, yours) }
         val liked = c.library.likedShown.value.filter { VoiceSearch.names("${it.title} ${it.artistText}", query) >= 2 }
             .take(SEARCH_EACH).map { playable(it, yours) }
+        // Prism Car: radio stations by that name, from the directory.
+        val stations = if (!BuildConfig.CAR_BUILD) emptyList<MediaItem>() else runCatching { c.radioStations.search(query) }.getOrDefault(emptyList())
+            .take(SEARCH_EACH).let { stationList("${RADIO_LIST}search", tr(R.string.car_radio), it) }
         val taste = runCatching { c.taste.searchTaste() }.getOrDefault(com.prism.music.data.innertube.SearchRank.Taste.NONE)
         val found = runCatching { c.ytm.searchTop(query, taste) }.getOrNull()
         val top = found?.top?.let { tile(it, grouped(tr(R.string.top_results))) }
@@ -274,7 +308,7 @@ class MediaTree(private val c: AppContainer) {
             found?.sections.orEmpty().firstOrNull { it.first == SearchFilter.SONGS }?.second.orEmpty().filterIsInstance<SongItem>().map { it.song })
             .distinctBy { it.id }
         if (foundSongs.isNotEmpty()) folders[SEARCH] = query to foundSongs
-        return (lists + liked + listOfNotNull(top) + sections).distinctBy { it.mediaId } to (found != null)
+        return (lists + liked + stations + listOfNotNull(top) + sections).distinctBy { it.mediaId } to (found != null)
     }
 
     /** A playlist of the listener's own, for the car: Prism's, then their YouTube library's. */
@@ -447,7 +481,9 @@ class ArtworkProvider : ContentProvider() {
         }
         val parsed = Uri.parse(url)
         val host = parsed.host ?: return null
-        if (!url.startsWith("https://") || (allowedHosts.none { host.endsWith(it) } && !youTubeImage(host, parsed.path))) return null
+        // A radio station's logo (Prism Car) is on the station's own site: only the logos the directory listed are fetched.
+        val radioLogo = com.prism.music.data.radio.RadioDirectory.isLogo(url)
+        if (!radioLogo && (!url.startsWith("https://") || (allowedHosts.none { host.endsWith(it) } && !youTubeImage(host, parsed.path)))) return null
         val container = runCatching { (ctx.applicationContext as? com.prism.music.PrismApp)?.container }.getOrNull()
         return cached(ctx, url) {
             // A cover already kept on the phone (what the app itself shows, offline too), else from the network.

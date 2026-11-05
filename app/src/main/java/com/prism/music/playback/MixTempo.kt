@@ -420,7 +420,7 @@ class MixTempo(
             val uri = local(id, scratch)
             if (uri != null) ex.setDataSource(context, uri, null)
             else {
-                if (!network || id.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX)) return null
+                if (!network || id.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX) || id.startsWith(com.prism.music.data.model.Song.RADIO_PREFIX)) return null
                 val a = streams.analysisAudio(id)
                 if (a.contentLength <= 0) throw java.io.IOException("the stream's length is unknown")
                 ranged = RangedSource(http, a.url, a.contentLength)
@@ -497,7 +497,7 @@ class MixTempo(
         val file = File(context.cacheDir, "mix_$id.part")
         try {
             val uri = local(id, file) ?: run {
-                if (!network || id.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX)) return null
+                if (!network || id.startsWith(com.prism.music.data.model.Song.LOCAL_PREFIX) || id.startsWith(com.prism.music.data.model.Song.RADIO_PREFIX)) return null
                 Log.d(TAG, "downloading $id to scan it")
                 val a = streams.analysisAudio(id)
                 http.newCall(Request.Builder().url(a.url).apply {
