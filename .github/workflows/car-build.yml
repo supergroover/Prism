@@ -1,0 +1,68 @@
+# Builds Prism Car (./gradlew :app:assembleRelease -Pcar) for a car with Android Automotive OS, on every push to the
+# car-build branch. The APK is published as the pre-release "car-latest" (Prism-Car.apk). When the build fails, its log
+# goes to the car-build-log branch so it can be read without the Actions page.
+name: Build Prism Car
+
+on:
+  push:
+    branches: [car-build]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: car-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # The same signing key for every build while it's cached, so a new Prism Car installs over the last one.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.android/debug.keystore
+          key: prism-car-debug-keystore
+
+      - name: Android SDK platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" || true
+
+      - name: Build
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleRelease -Pcar --stacktrace --no-configuration-cache 2>&1 | tee build.log
+
+      - name: Publish Prism-Car.apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$apk" Prism-Car.apk
+          gh release delete car-latest --yes --cleanup-tag || true
+          gh release create car-latest Prism-Car.apk --prerelease --target "$GITHUB_SHA" \
+            --title "Prism Car" \
+            --notes "Prism for Android Automotive OS, built from ${GITHUB_SHA::7} on the car-build branch."
+
+      - name: Keep the log of a failed build
+        if: failure()
+        run: |
+          git config user.name "car-build"
+          git config user.email "car-build@users.noreply.github.com"
+          cp build.log /tmp/build.log 2>/dev/null || echo "No build log (failed before the build)." > /tmp/build.log
+          git checkout --orphan car-build-log
+          git rm -rq --cached . || true
+          cp /tmp/build.log build.log
+          git add build.log
+          git commit -qm "Build log for ${GITHUB_SHA::7}"
+          git push -f origin car-build-log
