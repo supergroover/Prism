@@ -313,7 +313,7 @@ For a car with Android Automotive OS (Polestar, Volvo and others, installed on t
 ./gradlew :app:assembleRelease -Pcar
 ```
 
-It installs as **Prism Car** (`com.prism.music.car`) beside any other Prism. The car's own media player shows Prism's library and keeps playing while driving; Prism's own screens (sign-in, Settings) open from the player's settings button when parked. It doesn't update itself from GitHub.
+It installs as **Prism Car** (`com.prism.music.car`) beside any other Prism. The car's own media player shows Prism's library and keeps playing while driving; Prism's own screens (sign-in, Settings) open from the player's settings button when parked. Lyrics in place of the song's title start off (the car's Lyrics button turns them on), and it doesn't update itself from GitHub.
 
 Unit tests (some call live lyric and YouTube Music endpoints, so they need a network connection):
 

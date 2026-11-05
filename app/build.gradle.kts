@@ -49,6 +49,9 @@ android {
         // Prism updates itself from GitHub's releases (data/Updates.kt), except a build for cars (`-Pcar`, below): an
         // update from GitHub is the phone's Prism, which would install beside it instead of replacing it.
         buildConfigField("boolean", "SELF_UPDATE", (!project.hasProperty("car")).toString())
+        // A build for cars (`-Pcar`): the car's screen is the driver's, so lyrics in place of the title start off there
+        // (Settings.carLyrics; the car's Lyrics button still turns them on).
+        buildConfigField("boolean", "CAR_BUILD", project.hasProperty("car").toString())
     }
 
     // Releases are signed with the key in keystore.properties (gitignored, with the .jks beside it).

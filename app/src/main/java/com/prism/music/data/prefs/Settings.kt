@@ -1223,8 +1223,11 @@ data class AppSettings(
     /** Prism Connect: other Prism devices on the Wi-Fi can find this one and move what they're playing here. */
     val handoffAvailable: Boolean = false,
     val lyricsScale: Float = 1f,
-    /** Lyrics on Android Auto's player (the car's Lyrics button flips this too). */
-    val carLyrics: Boolean = true,
+    /**
+     * Lyrics on Android Auto's player (the car's Lyrics button flips this too). Off to start with in a build for cars
+     * (`-Pcar`), where the car's own screen is the driver's: the title and artist show as they are.
+     */
+    val carLyrics: Boolean = !com.prism.music.BuildConfig.CAR_BUILD,
     val carLyricsStyle: CarLyricsStyle = CarLyricsStyle.TEXT,
     /** Also on the phone's own media controls (notification, lock screen) when not in the car. */
     val carLyricsOnPhone: Boolean = false,
